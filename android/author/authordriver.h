@@ -28,7 +28,7 @@
 #include <utils/List.h>
 #include <utils/Errors.h>
 
-#include <camera/ICamera.h>
+#include <ui/ICamera.h>
 
 
 #include <media/mediarecorder.h>
@@ -236,8 +236,6 @@ private:
     set_parameters_command& operator=(const set_parameters_command&);
 };
 
-class MediaProfiles;
-
 class AuthorDriver :
 public OsclActiveObject,
 public PVCommandStatusObserver,
@@ -383,7 +381,6 @@ private:
     int32            mVideo_bitrate_setting;
 
     FILE*       ifpOutput;
-    MediaProfiles *mMediaProfiles;
 };
 
 class AuthorDriverWrapper

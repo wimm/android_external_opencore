@@ -33,8 +33,13 @@
 #endif
 
 
+#ifdef SLSI_S5P6442
+#define INPUT_BUFFER_SIZE_MP4ENC 202752			//(352 * 288 * 2) for YUV 422 format (fake camera test)
+#define OUTPUT_BUFFER_SIZE_MP4ENC 152064                 // CIF MAX size : we have to find proper size later	
+#else /* SLSI_S5P6442 */
 #define INPUT_BUFFER_SIZE_MP4ENC 38016          //(176 * 144 * 1.5) for YUV 420 format.
 #define OUTPUT_BUFFER_SIZE_MP4ENC 8192
+#endif /* SLSI_S5P6442 */
 
 
 #define NUMBER_INPUT_BUFFER_MP4ENC  5

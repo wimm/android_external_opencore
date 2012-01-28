@@ -20,14 +20,13 @@
 
 #include <unistd.h>
 #include <media/thread_init.h>
-#include <media/MediaProfiles.h>
-#include <surfaceflinger/ISurface.h>
-#include <camera/ICamera.h>
+#include <ui/ISurface.h>
+#include <ui/ICamera.h>
+#include <cutils/properties.h> // for property_get
 #include "authordriver.h"
 #include "pv_omxcore.h"
 #include <sys/prctl.h>
 #include "pvmf_composer_size_and_duration.h"
-#include "pvmf_duration_infomessage.h"
 #include "android_camera_input.h"
 
 using namespace android;
@@ -119,7 +118,6 @@ AuthorDriver::AuthorDriver()
     mVideo_bitrate_setting(0),
     ifpOutput(NULL)
 {
-    mMediaProfiles = MediaProfiles::getInstance();
     mSyncSem = new OsclSemaphore();
     mSyncSem->Create();
 
@@ -1142,13 +1140,110 @@ static int setVideoBitrateHeuristically(int videoWidth)
     return bitrate_setting;
 }
 
+
+// Returns true on success
+static bool getMinAndMaxValuesOfProperty(const char*propertyKey, int64& minValue, int64& maxValue)
+{
+    char value[PROPERTY_VALUE_MAX];
+    int rc = property_get(propertyKey, value, 0);
+    LOGV("property_get(): rc = %d, value=%s", rc, value);
+    if (rc > 0) {
+        char* b = strchr(value, ',');
+        if (b == 0) {  // A pair of values separated by ","?
+            return false;
+        } else {
+            String8 key(value, b - value);
+            if (!safe_strtoi64(key.string(), &minValue) || !safe_strtoi64(b + 1, &maxValue)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+// Maps the given encoder to a system property key
+// Returns true on success
+static bool getPropertyKeyForVideoEncoder(video_encoder encoder, char* name, size_t len)
+{
+    switch(encoder) {
+        case VIDEO_ENCODER_MPEG_4_SP:
+            strncpy(name, "ro.media.enc.vid.m4v.", len);
+            return true;
+        case VIDEO_ENCODER_H264:
+            strncpy(name, "ro.media.enc.vid.h264.", len);
+            return true;
+        case VIDEO_ENCODER_H263:
+            strncpy(name, "ro.media.enc.vid.h263.", len);
+            return true;
+        default:
+            LOGE("Failed to get system property key for video encoder(%d)", encoder);
+            return false;
+    }
+}
+
+// Retrieves the advertised video property range from system properties for the given encoder.
+// If the encoder is not found, or the video property is not listed as a system property,
+// default hardcoded min and max values will be used.
+static void getSupportedPropertyRange(video_encoder encoder, const char* property, int64& min, int64& max)
+{
+    char videoEncoderName[PROPERTY_KEY_MAX];
+    bool propertyKeyExists = getPropertyKeyForVideoEncoder(encoder, videoEncoderName, PROPERTY_KEY_MAX - 1);
+    if (propertyKeyExists) {
+        if ((strlen(videoEncoderName) + strlen(property) + 1) < PROPERTY_KEY_MAX) {  // Valid key length
+            strcat(videoEncoderName, property);
+        } else {
+            propertyKeyExists = false;
+        }
+    }
+    if (!propertyKeyExists || !getMinAndMaxValuesOfProperty(videoEncoderName, min, max)) {
+        if (strcmp(property, "bps") == 0) {
+            min = MIN_VIDEO_BITRATE_SETTING;
+            max = MAX_VIDEO_BITRATE_SETTING;
+        } else if (strcmp(property, "fps") == 0) {
+            min = ANDROID_MIN_FRAME_RATE_FPS;
+            max = ANDROID_MAX_FRAME_RATE_FPS;
+        } else if (strcmp(property, "width") == 0) {
+            min = ANDROID_MIN_ENCODED_FRAME_WIDTH;
+            max = ANDROID_MAX_ENCODED_FRAME_WIDTH;
+        } else if (strcmp(property, "height") == 0) {
+            min = ANDROID_MIN_ENCODED_FRAME_HEIGHT;
+            max = ANDROID_MAX_ENCODED_FRAME_HEIGHT;
+        } else {
+            LOGE("Unknown video property: %s", property);
+            min = max = 0;
+        }
+        LOGW("Use default video %s range [%lld %lld]", property, min, max);
+    }
+}
+
+static void getSupportedVideoBitRateRange(video_encoder encoder, int64& minBitRateBps, int64& maxBitRateBps)
+{
+    getSupportedPropertyRange(encoder, "bps", minBitRateBps, maxBitRateBps);
+}
+
+static void getSupportedVideoFrameRateRange(video_encoder encoder, int64& minFrameRateFps, int64& maxFrameRateFps)
+{
+    getSupportedPropertyRange(encoder, "fps", minFrameRateFps, maxFrameRateFps);
+}
+
+static void getSupportedVideoFrameWidthRange(video_encoder encoder, int64& minWidth, int64& maxWidth)
+{
+    getSupportedPropertyRange(encoder, "width", minWidth, maxWidth);
+}
+
+static void getSupportedVideoFrameHeightRange(video_encoder encoder, int64& minHeight, int64& maxHeight)
+{
+    getSupportedPropertyRange(encoder, "height", minHeight, maxHeight);
+}
+
 // Clips the intented video encoding rate so that it is
 // within the advertised support range. Logs a warning if
 // the intended bit rate is out of the range.
 void AuthorDriver::clipVideoBitrate()
 {
-    int minBitrate = mMediaProfiles->getVideoEncoderParamByName("enc.vid.bps.min", mVideoEncoder);
-    int maxBitrate = mMediaProfiles->getVideoEncoderParamByName("enc.vid.bps.max", mVideoEncoder);
+    int64 minBitrate, maxBitrate;
+    getSupportedVideoBitRateRange(mVideoEncoder, minBitrate, maxBitrate);
     if (mVideo_bitrate_setting < minBitrate) {
         LOGW("Intended video encoding bit rate (%d bps) is too small and will be set to (%lld bps)", mVideo_bitrate_setting, minBitrate);
         mVideo_bitrate_setting = minBitrate;
@@ -1160,8 +1255,8 @@ void AuthorDriver::clipVideoBitrate()
 
 void AuthorDriver::clipVideoFrameRate()
 {
-    int minFrameRate = mMediaProfiles->getVideoEncoderParamByName("enc.vid.fps.min", mVideoEncoder);
-    int maxFrameRate = mMediaProfiles->getVideoEncoderParamByName("enc.vid.fps.max", mVideoEncoder);
+    int64 minFrameRate, maxFrameRate;
+    getSupportedVideoFrameRateRange(mVideoEncoder, minFrameRate, maxFrameRate);
     if (mVideoFrameRate < minFrameRate) {
         LOGW("Intended video encoding frame rate (%d fps) is too small and will be set to (%lld fps)", mVideoFrameRate, minFrameRate);
         mVideoFrameRate = minFrameRate;
@@ -1173,8 +1268,8 @@ void AuthorDriver::clipVideoFrameRate()
 
 void AuthorDriver::clipVideoFrameWidth()
 {
-    int minFrameWidth = mMediaProfiles->getVideoEncoderParamByName("enc.vid.width.min", mVideoEncoder);
-    int maxFrameWidth = mMediaProfiles->getVideoEncoderParamByName("enc.vid.width.max", mVideoEncoder);
+    int64 minFrameWidth, maxFrameWidth;
+    getSupportedVideoFrameWidthRange(mVideoEncoder, minFrameWidth, maxFrameWidth);
     if (mVideoWidth < minFrameWidth) {
         LOGW("Intended video encoding frame width (%d) is too small and will be set to (%lld)", mVideoWidth, minFrameWidth);
         mVideoWidth = minFrameWidth;
@@ -1186,8 +1281,8 @@ void AuthorDriver::clipVideoFrameWidth()
 
 void AuthorDriver::clipVideoFrameHeight()
 {
-    int minFrameHeight = mMediaProfiles->getVideoEncoderParamByName("enc.vid.height.min", mVideoEncoder);
-    int maxFrameHeight = mMediaProfiles->getVideoEncoderParamByName("enc.vid.height.max", mVideoEncoder);
+    int64 minFrameHeight, maxFrameHeight;
+    getSupportedVideoFrameHeightRange(mVideoEncoder, minFrameHeight, maxFrameHeight);
     if (mVideoHeight < minFrameHeight) {
         LOGW("Intended video encoding frame height (%d) is too small and will be set to (%lld)", mVideoHeight, minFrameHeight);
         mVideoHeight = minFrameHeight;
@@ -1408,28 +1503,10 @@ void AuthorDriver::HandleInformationalEvent(const PVAsyncInformationalEvent& aEv
         LOGV("HandleInformationalEvent(%d)", event_type);
     }
 
-    if (PVMFInfoOverflow == event_type && mVideoInputMIO) {
-        PVUuid infomsguuid = PVMFDurationInfoMessageInterfaceUUID;
-        PVMFDurationInfoMessageInterface* eventMsg = NULL;
-        PVInterface* infoExtInterface = aEvent.GetEventExtensionInterface();
-        if (infoExtInterface &&
-                infoExtInterface->queryInterface(infomsguuid, (PVInterface*&)eventMsg) && eventMsg) {
-            PVUuid eventuuid;
-            int32 infoCode;
-            eventMsg->GetCodeUUID(infoCode, eventuuid);
-            if (eventuuid == infomsguuid) {
-                uint32 duration = eventMsg->GetDuration();
-                ((AndroidCameraInput *)mVideoInputMIO)->setAudioLossDuration(duration);
-            }
-            eventMsg->removeRef();
-            eventMsg = NULL;
-        }
-    } else {
-        mListener->notify(
-                MEDIA_RECORDER_EVENT_INFO,
-                GetMediaRecorderInfoCode(aEvent),
-                aEvent.GetEventType());
-    }
+    mListener->notify(
+            MEDIA_RECORDER_EVENT_INFO,
+            GetMediaRecorderInfoCode(aEvent),
+            aEvent.GetEventType());
 }
 
 status_t AuthorDriver::setListener(const sp<IMediaPlayerClient>& listener) {

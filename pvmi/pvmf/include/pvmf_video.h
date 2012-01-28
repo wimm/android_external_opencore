@@ -36,7 +36,9 @@
 #define PVMF_VIDEO_INPUT_HEIGHT 144
 #define PVMF_VIDEO_INPUT_FRAME_RATE 15
 //#define VIDEO_INPUT_FORMAT PVMFVEN_INPUT_YUV420
-
+#ifdef SLSI_S5P6442
+const PVUid32 PVMFEOSFormatSpecificInfo_UID = 0x2;
+#else /* SLSI_S5P6442 */
 const PVUid32 PVMFYuvFormatSpecificInfo0_UID = 0x1;
 const PVUid32 PVMFEOSFormatSpecificInfo_UID = 0x2;
 class PVMFYuvFormatSpecificInfo0
@@ -66,7 +68,7 @@ class PVMFYuvFormatSpecificInfo0
         uint32 num_buffers;
         uint32 buffer_size;
 };
-
+#endif /* SLSI_S5P6442 */
 class PVMFVideoResolution
 {
     public:

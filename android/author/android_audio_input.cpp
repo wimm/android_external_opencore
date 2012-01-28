@@ -23,7 +23,6 @@
 #include "android_audio_input.h"
 #include "pv_mime_string_utils.h"
 #include "oscl_dll.h"
-#include "pvmf_duration_infomessage.h"
 
 #include <media/AudioRecord.h>
 #include <sys/prctl.h>
@@ -948,7 +947,7 @@ PVMFStatus AndroidAudioInput::DoPause()
 ////////////////////////////////////////////////////////////////////////////
 PVMFStatus AndroidAudioInput::DoReset()
 {
-    LOGD("DoReset: E");
+    LOGV("DoReset");
     // Remove and destroy the clock state observer
     RemoveDestroyClockStateObs();
     iExitAudioThread = true;
@@ -956,9 +955,9 @@ PVMFStatus AndroidAudioInput::DoReset()
     iFirstFrameReceived = false;
     iFirstFrameTs = 0;
     if(iAudioThreadStarted ){
-        iAudioThreadSem->Signal();
-        iAudioThreadTermSem->Wait();
-        iAudioThreadStarted = false;
+    iAudioThreadSem->Signal();
+    iAudioThreadTermSem->Wait();
+    iAudioThreadStarted = false;
     }
     while(!iCmdQueue.empty())
     {
@@ -979,7 +978,6 @@ PVMFStatus AndroidAudioInput::DoReset()
         iWriteResponseQueue.erase(&iWriteResponseQueue[0]);
     }
     iState = STATE_IDLE;
-    LOGD("DoReset: X");
     return PVMFSuccess;
 }
 
@@ -997,7 +995,7 @@ PVMFStatus AndroidAudioInput::DoFlush()
 ////////////////////////////////////////////////////////////////////////////
 PVMFStatus AndroidAudioInput::DoStop()
 {
-    LOGD("DoStop: E");
+    LOGV("DoStop");
 
     // Remove and destroy the clock state observer
     RemoveDestroyClockStateObs();
@@ -1008,11 +1006,10 @@ PVMFStatus AndroidAudioInput::DoStop()
     iFirstFrameTs = 0;
     iState = STATE_STOPPED;
     if(iAudioThreadStarted ){
-        iAudioThreadSem->Signal();
-        iAudioThreadTermSem->Wait();
-        iAudioThreadStarted = false;
+    iAudioThreadSem->Signal();
+    iAudioThreadTermSem->Wait();
+    iAudioThreadStarted = false;
     }
-    LOGD("DoStop: X");
     return PVMFSuccess;
 }
 
@@ -1176,29 +1173,10 @@ int AndroidAudioInput::audin_thread_func() {
             iOSSRequestQueue.erase(&iOSSRequestQueue[0]);
             iOSSRequestQueueLock.Unlock();
 
-            uint32 inputFramesLost = record->getInputFramesLost();
-            if (inputFramesLost > 0) {
-                uint32 dataDurationLost = inputFramesLost * 1000 / iAudioSamplingRate;
-                LOGW("Notifying %d observers of %u ms of lost audio", iObservers.size(), dataDurationLost);
-
-                for(uint32 i = 0; i < iObservers.size(); i++) {
-                    int32 leavecode = 0;
-                    PVMFDurationInfoMessage* eventMsg = NULL;
-                    OSCL_TRY(leavecode, eventMsg = OSCL_NEW(PVMFDurationInfoMessage, (dataDurationLost)));
-                    iObservers[i]->ReportInfoEvent(PVMFInfoOverflow, OSCL_STATIC_CAST(PVInterface*, eventMsg));
-                }
-            }
-
             int numOfBytes = record->read(data, kBufferSize);
-            if (numOfBytes <= 0) {
-                // FIXME:
-                // When numOfBytes is not greater than 0, instead of terminating the audio
-                // recording thread immediately, wait for next incoming audio frame or stop/reset
-                // command to terminate the thread. Lets log the case to see whether the deadlock
-                // root cause is here. To resolve the problem, change the break to continue.
-                LOGW("numOfBytes (%d) <= 0.", numOfBytes);
+            //LOGV("read %d bytes", numOfBytes);
+            if (numOfBytes <= 0)
                 break;
-            }
 
             if (iFirstFrameReceived == false) {
                 iFirstFrameReceived = true;

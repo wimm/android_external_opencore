@@ -27,11 +27,15 @@ include $(PV_TOP)/build_config/opencore_dynamic/Android_opencore_rtsp.mk
 include $(PV_TOP)/build_config/opencore_dynamic/Android_opencore_mp4localreg.mk
 include $(PV_TOP)/build_config/opencore_dynamic/Android_opencore_mp4local.mk
 
+ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
+include $(PV_TOP)/build_config/opencore_dynamic/Android_omx_avcenc_sharedlibrary.mk$
+include $(PV_TOP)/build_config/opencore_dynamic/Android_omx_m4venc_sharedlibrary.mk$
+else
 ifeq ($(BUILD_PV_VIDEO_ENCODERS),1)
 include $(PV_TOP)/build_config/opencore_dynamic/Android_omx_avcenc_sharedlibrary.mk$
 include $(PV_TOP)/build_config/opencore_dynamic/Android_omx_m4venc_sharedlibrary.mk$
 endif
-
+endif
 
 ifeq ($(BUILD_PV_2WAY),1)
 include $(PV_TOP)/build_config/opencore_dynamic/Android_opencore_2way.mk

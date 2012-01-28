@@ -48,11 +48,16 @@
 //#include <linux/videodev.h>
 
 // SurfaceFlinger
-#include <surfaceflinger/ISurface.h>
+#include <ui/ISurface.h>
 
 // interprocess shared memory support
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
+
+#define PMEM_STREAM
+#ifdef PMEM_STREAM
+#include <binder/MemoryHeapPmem.h>
+#endif
 
 // color converter
 #include "cczoomrotation16.h"
@@ -284,6 +289,13 @@ protected:
     int32 iVideoDisplayHeight;
     int32 iVideoDisplayWidth;
 
+#ifdef SLSI_S5P6442
+    int32 iNumberOfBuffers;
+    int32 iBufferSize;
+    bool iNumberOfBuffersValid;
+    bool iBufferSizeValid;
+#endif /* SLSI_S5P6442 */
+
     // hardware specific
     PVMFFormatType iVideoSubFormat;
     bool iVideoSubFormatValid;
@@ -308,24 +320,17 @@ protected:
     static const int kBufferCount = 2;
     int                         mFrameBufferIndex;
     ISurface::BufferHeap        mBufferHeap;
+#ifdef PMEM_STREAM
+    sp<MemoryHeapPmem>          mPmemHeap;
+#endif
     size_t                      mFrameBuffers[kBufferCount];
+#ifdef SLSI_S5P6442
+    bool mUseHardware;
+#endif /* SLSI_S5P6442 */
 
     void convertFrame(void* src, void* dst, size_t len);
     //This bool is set true when all necassary parameters have been received.
     bool iIsMIOConfigured;
-
-    /*
-     * The value of mNumberOfFramesToHold is decoder specific.
-     *
-     * Please make sure that the number of unique output buffers from the decoder
-     * (either hardware or software) is not less than 1 +  mNumberOfFramesToHold;
-     * otherwise, we will have starvation.
-     *
-     * On some platforms, mNumberOfFramesToHold needs to set to more than 1 (such as
-     * 2) in order to workaround a tearing issue from SF during video playback.
-     *
-     */
-    int mNumberOfFramesToHold;
 
 #ifdef PERFORMANCE_MEASUREMENTS_ENABLED
         PVProfile PVOmapVideoProfile;

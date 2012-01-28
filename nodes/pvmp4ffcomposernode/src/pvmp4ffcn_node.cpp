@@ -19,34 +19,6 @@
  * @file pvmp4ffcn_node.cpp
  * @brief Node for PV MPEG4 file format composer
  */
-
-/*
- * FIXME:
- * The current implementation of the file writer is NOT
- * thread-safe.
- *
- * A separate delete queue should be used to
- * pass back the fragments from the file writer thread
- * to the composer node and to let the composer node
- * handle the deallocation of any fragments; otherwise,
- * race condition may occur. Some lost free chunk
- * notification has been found due to this race
- * condition.
- *
- * The reason why there is race condition is that the
- * rest of the OpenCore assumes a single-thread model.
- * In other words, everything is scheduled to
- * run within a single omx thread. A separate file writer
- * thread breaks this model, and deallocate fragments
- * here may cause deallocate() be called within two
- * separate thread, and thus the free chunk available
- * flag can be corrupted.
- *
- * Don't remove the following #undef line unless you
- * fix the above issue.
- */
-#undef ANDROID
-
 #ifdef ANDROID
 // #define LOG_NDEBUG 0
 #define LOG_TAG "PvMp4Composer"
@@ -70,6 +42,7 @@
 #ifndef OSCL_MEM_BASIC_FUNCTIONS_H
 #include "oscl_mem_basic_functions.h"
 #endif
+#include "pvmf_omx_basedec_node.h"  // for NUMBER_OUTPUT_BUFFER
 
 #ifdef ANDROID
 namespace android
@@ -82,29 +55,31 @@ namespace android
 // This class is friend with the composer node it belongs to, in order
 // to be able to call the original AddMemFragToTrack which does all
 // the work.
-
-#define FRAME_QUEUE_DEFAULT_SIZE 20
+//
+// The queue is implemented using a circular buffer. mBuffer is the
+// start of the array and mEnd points just after the last element in
+// the array.
+// mFirst points to the oldest fragment.
+// mLast points to the next available cell for a new fragment.
+// When the array is empty or full mFirst == mLast.
 
 class FragmentWriter: public Thread
 {
     public:
         FragmentWriter(PVMp4FFComposerNode *composer) :
-                Thread(kThreadCallJava), mComposer(composer),
-                mPrevWriteStatus(PVMFSuccess), mTid(NULL), mExitRequested(false)
-        {
-            mQueue.reserve(FRAME_QUEUE_DEFAULT_SIZE);
-        }
+                Thread(kThreadCallJava), mSize(0), mEnd(mBuffer + kCapacity),
+                mFirst(mBuffer), mLast(mBuffer), mComposer(composer),
+                mPrevWriteStatus(PVMFSuccess), mTid(NULL), mDropped(0), mExitRequested(false) {}
 
         virtual ~FragmentWriter()
         {
             Mutex::Autolock l(mRequestMutex);
-
+            LOG_ASSERT(0 == mSize, "The queue should be empty by now.");
             LOG_ASSERT(mExitRequested, "Deleting an active instance.");
-            LOGD_IF(!mQueue.empty(), "Releasing %d fragments in dtor", mQueue.size());
-
-            while (!mQueue.empty())  // make sure we are flushed
+            LOGD_IF(0 < mSize, "Flushing %d frags in dtor", mSize);
+            while (0 < mSize)  // make sure we are flushed
             {
-                releaseQueuedFrame(mQueue.begin());
+                decrPendingRequests();
             }
         }
 
@@ -114,7 +89,6 @@ class FragmentWriter: public Thread
         {
             mExitRequested = true;
             Thread::requestExit();
-
             mRequestMutex.lock();
             mRequestCv.signal();
             mRequestMutex.unlock();
@@ -130,22 +104,13 @@ class FragmentWriter: public Thread
             while (!done)
             {
                 mRequestMutex.lock();
-                done = mQueue.empty();
+                done = mSize == 0 || iter > kMaxFlushAttempts;
                 if (!done) mRequestCv.signal();
                 mRequestMutex.unlock();
-                if (!done) {
-                    usleep(kFlushSleepMicros);
-                    if ((++iter % kMaxFlushAttemptsWarning) == 0) {
-                        if (iter >= kMaxFlushAttemptsCrashing) {
-                            LOGE("Fragment flush takes way too long!");
-                            // Crash media server!
-                            *((char *) 0) = 0x01;
-                        } else {
-                            LOGW("Fragement writer flush takes %d us", iter * kFlushSleepMicros);
-                        }
-                    }
-                }
+                if (!done) usleep(kFlushSleepMicros);
+                ++iter;
             }
+            LOG_ASSERT(iter <= kMaxFlushAttempts, "Failed to flush");
         }
 
         // Called by the ProcessIncomingMsg method from the
@@ -156,28 +121,57 @@ class FragmentWriter: public Thread
                                          OsclRefCounterMemFrag& aMemFrag, PVMFFormatType aFormat,
                                          uint32& aTimestamp, int32 aTrackId, PVMp4FFComposerPort *aPort)
         {
-            if (mExitRequested) {
-                LOGW("Enqueue fragment after exit request!");
-                aFrame.clear();  // Release the frame
-                return PVMFErrCancelled;
+            if (mExitRequested) return PVMFErrCancelled;
+            Mutex::Autolock lock(mRequestMutex);
+
+            // When the queue is full, we drop the request. This frees the
+            // memory fragment and keeps the system running. Decoders are
+            // unhappy when there is no buffer available to write the
+            // output.
+            // An alternative would be to discard the oldest fragment
+            // enqueued to free some space. However that would modify
+            // mFirst and require extra locking because the thread maybe
+            // in the process of writing it.
+            if (mSize == kCapacity)
+            {
+                ++mDropped;
+                LOGW_IF((mDropped % kLogDroppedPeriod) == 0, "Frame %d dropped.", mDropped);
+                // TODO: Should we return an error code here?
+                return mPrevWriteStatus;
             }
 
-            Mutex::Autolock lock(mRequestMutex);
-            Request frame = {aFrame, aMemFrag, aFormat, aTimestamp, aTrackId, aPort};
-            mQueue.push_back(frame);
+            mLast->set(aFrame, aMemFrag, aFormat, aTimestamp, aTrackId, aPort);
+            incrPendingRequests();
+
             mRequestCv.signal();
             return mPrevWriteStatus;
         }
 
     private:
         static const bool kThreadCallJava = false;
+        static const size_t kLogDroppedPeriod = 10;  // Arbitrary.
+        // Must match the number of buffers allocated in the decoder.
+        static const size_t kCapacity = NUMBER_OUTPUT_BUFFER;
+        static const size_t kWarningThreshold = kCapacity * 3 / 4; // Warn at 75%
         static const OsclRefCounterMemFrag kEmptyFrag;
-        static const int kFlushSleepMicros = 200 * 1000;    // 200 ms
-        static const size_t kMaxFlushAttemptsWarning = 10;  // 2 seconds
-        static const size_t kMaxFlushAttemptsCrashing = 30; // 6 seconds
+        // Flush blocks for 2 seconds max.
+        static const size_t kMaxFlushAttempts = 10;
+        static const int kFlushSleepMicros = 200 * 1000;
 
         struct Request
         {
+            void set(Oscl_Vector<OsclMemoryFragment, OsclMemAllocator> aFrame,
+                     OsclRefCounterMemFrag& aMemFrag, PVMFFormatType aFormat,
+                     uint32 aTimestamp, int32 aTrackId, PVMp4FFComposerPort *aPort)
+            {
+                mFrame = aFrame;
+                mFrag = aMemFrag;
+                mFormat = aFormat;
+                mTimestamp = aTimestamp;
+                mTrackId = aTrackId;
+                mPort = aPort;
+            }
+
             Oscl_Vector<OsclMemoryFragment, OsclMemAllocator> mFrame;
             OsclRefCounterMemFrag mFrag;
             PVMFFormatType mFormat;
@@ -186,18 +180,23 @@ class FragmentWriter: public Thread
             PVMp4FFComposerPort *mPort;
         };
 
-        void releaseQueuedFrame(Request *frame)
+        void incrPendingRequests()
         {
-            if (!frame) {
-                LOGE("Frame not valid");
-                return;
-            }
-            frame->mFrame.clear();
+            ++mLast;
+            if (mEnd == mLast) mLast = mBuffer;
+            ++mSize;
+        }
+
+        void decrPendingRequests()
+        {
+            mFirst->mFrame.clear();
             // Release the memory fragment tracked using a refcount
             // class. Need to assign an empty frag to release the memory
             // fragment. We cannot wait for the array to wrap around.
-            frame->mFrag = kEmptyFrag;  // FIXME: This assignement to decr the ref count is ugly.
-            mQueue.erase(frame);
+            mFirst->mFrag = kEmptyFrag;  // FIXME: This assignement to decr the ref count is ugly.
+            ++mFirst;
+            if (mEnd == mFirst) mFirst = mBuffer;
+            --mSize;
         }
 
         // Called by the base class Thread.
@@ -209,38 +208,57 @@ class FragmentWriter: public Thread
 
             LOG_ASSERT(androidGetThreadId() == mTid,
                        "Thread id has changed!: %p != %p", mTid, androidGetThreadId());
-            if (mExitRequested)
-                return false;
 
+            size_t numFrags = 0;
+            // Check if there's work to do. Otherwise wait for new fragment.
             mRequestMutex.lock();
-            if (mQueue.empty())
-                mRequestCv.wait(mRequestMutex);
-
-            if (!mQueue.empty()) {
-                // Hold the lock while writing the fragment
-                Request frame = mQueue[0];  // Make a local copy
-                mPrevWriteStatus = mComposer->AddMemFragToTrack(
-                        frame.mFrame, frame.mFrag, frame.mFormat,
-                        frame.mTimestamp, frame.mTrackId, frame.mPort);
-                if (!mQueue.empty()) {
-                    releaseQueuedFrame(mQueue.begin());
-                }
-            }
+            numFrags = mSize;
             mRequestMutex.unlock();
 
+            bool doneWaiting = numFrags != 0;
+            while (!doneWaiting)
+            {
+                mRequestMutex.lock();
+                mRequestCv.wait(mRequestMutex);
+                doneWaiting = mSize > 0 || mExitRequested;
+                numFrags = mSize;
+                mRequestMutex.unlock();
+            }
+
+            if (mExitRequested) return false;
+
+            LOGW_IF(numFrags > kWarningThreshold, "%d fragments in queue.", numFrags);
+            for (size_t i = 0; i < numFrags; ++i)
+            {
+                // Don't lock the array while we are calling
+                // AddMemFragToTrack, which may last a long time, because
+                // we are the only thread accessing mFirst.
+                mPrevWriteStatus = mComposer->AddMemFragToTrack(
+                                       mFirst->mFrame, mFirst->mFrag, mFirst->mFormat,
+                                       mFirst->mTimestamp, mFirst->mTrackId, mFirst->mPort);
+
+                mRequestMutex.lock();
+                decrPendingRequests();
+                mRequestMutex.unlock();
+            }
             return true;
         }
 
 
-        Mutex mRequestMutex;  // Protects mRequestCv, mQueue
+        Mutex mRequestMutex;  // Protects mRequestCv, mBuffer, mFirst, mLast, mDropped
         Condition mRequestCv;
-        Oscl_Vector<Request, OsclMemAllocator> mQueue;
+        Request mBuffer[kCapacity];
+        size_t mSize;
+        void *const mEnd;  // Marker for the end of the array.
+        Request *mFirst, *mLast;
+
         // mComposer with the real implementation of the AddMemFragToTrack method.
         PVMp4FFComposerNode *mComposer;
         // TODO: lock needed for mPrevWriteStatus? Are int assignement atomic on arm?
         PVMFStatus mPrevWriteStatus;
 
         android_thread_id_t mTid;
+        size_t mDropped;
         // Unlike exitPending(), stays to true once exit has been called.
         bool mExitRequested;
 };

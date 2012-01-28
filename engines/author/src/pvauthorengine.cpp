@@ -522,14 +522,6 @@ void PVAuthorEngine::HandleNodeInformationalEvent(const PVMFAsyncEvent& aEvent)
             PushCmdInFront(cmd);
         }
         break;
-
-        case PVMFInfoOverflow:
-        {
-            PVAsyncInformationalEvent event(aEvent.GetEventType(), NULL, aEvent.GetEventExtensionInterface());
-            iInfoEventObserver->HandleInformationalEvent(event);
-        }
-        break;
-
         case PVMF_COMPOSER_FILESIZE_PROGRESS:
         case PVMF_COMPOSER_DURATION_PROGRESS:
         {
@@ -1477,8 +1469,6 @@ PVMFStatus PVAuthorEngine::DoStop(PVEngineCommand& aCmd)
 
     switch (GetPVAEState())
     {
-        case PVAE_STATE_INITIALIZED:
-            return PVMFSuccess;
         case PVAE_STATE_RECORDING:
         case PVAE_STATE_PAUSED:
             iAuthorClock.Stop();

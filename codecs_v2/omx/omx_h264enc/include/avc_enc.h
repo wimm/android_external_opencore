@@ -27,10 +27,24 @@
 #include "OMX_Component.h"
 #endif
 
+#ifdef SLSI_S5P6442
+#ifndef __SAMSUNG_SYSLSI_APDEV_MFCLIB_SSBSIPH264ENCODE_H__
+#include "SsbSipH264Encode.h"
+#endif
+#else /* SLSI_S5P6442 */
 #ifndef AVCENC_API_H_INCLUDED
 #include "avcenc_api.h"
 #endif
+#endif /* SLSI_S5P6442 */
 
+#ifdef SLSI_S5P6442
+// RainAde for Encoding pic type
+enum
+{
+    PIC_TYPE_INTRA = 0,
+    PIC_TYPE_INTER
+};
+#else /* SLSI_S5P6442 */
 #ifndef CCRGB24TOYUV420_H_INCLUDED
 #include "ccrgb24toyuv420.h"
 #endif
@@ -46,6 +60,7 @@
 #ifndef OSCL_INT64_UTILS_H_INCLUDED
 #include "oscl_int64_utils.h"
 #endif
+#endif /* SLSI_S5P6442 */
 
 class AvcEncoder_OMX
 {
@@ -65,7 +80,11 @@ class AvcEncoder_OMX
                                  OMX_VIDEO_PARAM_VBSMCTYPE aVbsmcType);
 
 
+#ifdef SLSI_S5P6442
+        OMX_BOOL AvcEncodeVideo(OMX_U8*    aOutBuffer,
+#else /* SLSI_S5P6442 */
         AVCEnc_Status AvcEncodeVideo(OMX_U8*    aOutBuffer,
+#endif /* SLSI_S5P6442 */
                                      OMX_U32*   aOutputLength,
                                      OMX_BOOL*  aBufferOverRun,
                                      OMX_U8**   aOverBufferPointer,
@@ -75,9 +94,15 @@ class AvcEncoder_OMX
                                      OMX_TICKS* aOutTimeStamp,
                                      OMX_BOOL*  aSyncFlag);
 
+#ifdef SLSI_S5P6442
+        OMX_BOOL AvcEncodeSendInput(OMX_U8*    aInBuffer,
+                                    OMX_U32*   aInBufSize,
+                                    OMX_TICKS  aInTimeStamp);
+#else /* SLSI_S5P6442 */
         AVCEnc_Status AvcEncodeSendInput(OMX_U8*    aInBuffer,
                                          OMX_U32*   aInBufSize,
                                          OMX_TICKS  aInTimeStamp);
+#endif /* SLSI_S5P6442 */
 
 
         OMX_ERRORTYPE AvcEncDeinit();
@@ -85,6 +110,8 @@ class AvcEncoder_OMX
         OMX_ERRORTYPE AvcRequestIFrame();
         OMX_BOOL AvcUpdateBitRate(OMX_U32 aEncodedBitRate);
         OMX_BOOL AvcUpdateFrameRate(OMX_U32 aEncodeFramerate);
+#ifdef SLSI_S5P6442
+#else /* SLSI_S5P6442 */
         OMX_BOOL GetSpsPpsHeaderFlag();
 
         /* for avc encoder lib callback functions */
@@ -93,9 +120,23 @@ class AvcEncoder_OMX
         void    AVC_FrameUnbind(int indx);
 
 
+#endif /* SLSI_S5P6442 */
 
     private:
 
+#ifdef SLSI_S5P6442
+	// RainAde : for MFC(avc) encoder
+	int m_avcenc_create_flag;
+	void *m_avcenc_handle;
+	unsigned char * m_avcenc_buffer;
+
+	// RainAde : for composer interface
+	int frame_cnt;
+	int hdr_size;
+	int sps;
+	int pps;
+
+#else /* SLSI_S5P6442 */
         void CopyToYUVIn(uint8* YUV, int width, int height, int width_16, int height_16);
 
         /* RGB->YUV conversion */
@@ -128,6 +169,7 @@ class AvcEncoder_OMX
         OMX_BOOL  iReadyForNextFrame;
 
 
+#endif /* SLSI_S5P6442 */
 };
 
 

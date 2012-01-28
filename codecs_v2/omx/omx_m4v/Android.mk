@@ -21,15 +21,29 @@ LOCAL_C_INCLUDES := \
  	$(PV_TOP)/codecs_v2/omx/omx_m4v/include \
  	$(PV_TOP)/extern_libs_v2/khronos/openmax/include \
  	$(PV_TOP)/codecs_v2/omx/omx_baseclass/include \
- 	$(PV_TOP)/codecs_v2/video/m4v_h263/dec/src \
- 	$(PV_TOP)/codecs_v2/video/m4v_h263/dec/include \
  	$(PV_INCLUDES)
+
+ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
+LOCAL_C_INCLUDES += \
+	$(PV_TOP)/codecs_v2/video/s3c_mfc/dec/src \
+	$(PV_TOP)/codecs_v2/video/s3c_mfc/dec/include
+else
+LOCAL_C_INCLUDES += \
+ 	$(PV_TOP)/codecs_v2/video/m4v_h263/dec/src \
+ 	$(PV_TOP)/codecs_v2/video/m4v_h263/dec/include
+endif
 
 LOCAL_COPY_HEADERS_TO := $(PV_COPY_HEADERS_TO)
 
 LOCAL_COPY_HEADERS := \
 	include/omx_mpeg4_component.h \
- 	include/mpeg4_dec.h \
+ 	include/mpeg4_dec.h
+
+ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
+LOCAL_CFLAGS  += -DSLSI_S5P6442
+else
+LOCAL_COPY_HEADERS += \
  	include/mpeg4video_frame.h
+endif
 
 include $(BUILD_STATIC_LIBRARY)

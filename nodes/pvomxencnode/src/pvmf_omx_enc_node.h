@@ -1353,8 +1353,7 @@ class PVMFOMXEncNode
 
         uint32 iFrameCounter;
 
-        bool CheckComponentForMultRoles(OMX_STRING aCompName, OMX_STRING aRole);
-        bool CheckComponentCapabilities(PVMFFormatType* aOutFormat);
+
 
         uint32 iAvgBitrateValue;
         bool iResetInProgress;

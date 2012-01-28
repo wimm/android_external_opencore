@@ -2,10 +2,11 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
+    autodetect.cpp \
     metadatadriver.cpp \
     playerdriver.cpp \
     thread_init.cpp \
-    pvmediascanner.cpp \
+    mediascanner.cpp \
     android_surface_output.cpp \
     android_audio_output.cpp \
     android_audio_stream.cpp \
@@ -26,15 +27,24 @@ LOCAL_C_INCLUDES := $(PV_INCLUDES) \
     libs/drm/mobile1/include \
     include/graphics \
     external/skia/include/corecg \
-    $(call include-path-for, graphics corecg) \
-    external/tremolo/Tremolo
+    external/tremor/Tremor \
+    external/icu4c/common \
+    $(call include-path-for, graphics corecg)
 
 LOCAL_MODULE := libandroidpv
 
-LOCAL_SHARED_LIBRARIES := libui libutils libbinder libsurfaceflinger_client libcamera_client
+LOCAL_SHARED_LIBRARIES := libui libutils libbinder
 LOCAL_STATIC_LIBRARIES := libosclbase libosclerror libosclmemory libosclutil
 
 LOCAL_LDLIBS +=
+
+ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
+LOCAL_CFLAGS  += -DSLSI_S5P6442
+LOCAL_C_INCLUDES += vendor/sec_proprietary/libgralloc
+endif
+ifeq ($(MFC_ZERO_COPY),true)
+LOCAL_CFLAGS  += -DZERO_COPY
+endif
 
 include $(BUILD_STATIC_LIBRARY)
 

@@ -15,6 +15,11 @@
  * and limitations under the License.
  * -------------------------------------------------------------------
  */
+#ifdef SLSI_S5P6442
+#define LOG_NDEBUG 0
+#define LOG_TAG "MFC omx_mpeg4enc_component"
+#include <utils/Log.h>
+#endif /* SLSI_S5P6442 */
 
 #include "omx_mpeg4enc_component.h"
 
@@ -80,6 +85,9 @@ OMX_ERRORTYPE Mpeg4EncOmxComponentDestructor(OMX_IN OMX_HANDLETYPE pHandle, OMX_
 // This function is called by OMX_GetHandle and it creates an instance of the h263 component AO
 OMX_ERRORTYPE H263EncOmxComponentFactory(OMX_OUT OMX_HANDLETYPE* pHandle, OMX_IN  OMX_PTR pAppData, OMX_PTR pProxy, OMX_STRING aOmxLibName, OMX_PTR &aOmxLib, OMX_PTR aOsclUuid, OMX_U32 &aRefCount)
 {
+#ifdef SLSI_S5P6442
+	LOGV("H263EncOmxComponentFactory");
+#endif /* SLSI_S5P6442 */
     OSCL_UNUSED_ARG(aOmxLibName);
     OSCL_UNUSED_ARG(aOmxLib);
     OSCL_UNUSED_ARG(aOsclUuid);
@@ -114,6 +122,9 @@ OMX_ERRORTYPE H263EncOmxComponentFactory(OMX_OUT OMX_HANDLETYPE* pHandle, OMX_IN
 // This function is called by OMX_FreeHandle when component AO needs to be destroyed
 OMX_ERRORTYPE H263EncOmxComponentDestructor(OMX_IN OMX_HANDLETYPE pHandle, OMX_PTR &aOmxLib, OMX_PTR aOsclUuid, OMX_U32 &aRefCount)
 {
+#ifdef SLSI_S5P6442
+	LOGV("H263EncOmxComponentDestructor");
+#endif /* SLSI_S5P6442 */
     OSCL_UNUSED_ARG(aOmxLib);
     OSCL_UNUSED_ARG(aOsclUuid);
     OSCL_UNUSED_ARG(aRefCount);
@@ -517,6 +528,13 @@ OMX_ERRORTYPE OmxComponentMpeg4EncAO::ConstructComponent(OMX_PTR pAppData, OMX_P
     }
 
     ipMpegEncoderObject = OSCL_NEW(Mpeg4Encoder_OMX, ());
+#ifdef SLSI_S5P6442
+    // added by RainAde : for error check
+    if (NULL == ipMpegEncoderObject)
+    {
+        return OMX_ErrorInsufficientResources;
+    }
+#endif /* SLSI_S5P6442 */
 
 #if PROXY_INTERFACE
 

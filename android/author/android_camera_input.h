@@ -410,7 +410,6 @@ public:
 
     // add for Camcorder
     PVMFStatus              postWriteAsync(nsecs_t timestamp, const sp<IMemory>& frame);
-    void setAudioLossDuration(uint32 duration);
 
     bool isRecorderStarting() { return iState==STATE_STARTED?true:false; }
 
@@ -532,8 +531,6 @@ private:
     PVMFMediaClockNotificationsInterface *iClockNotificationsInf;
 
     uint32 iAudioFirstFrameTs;
-    OsclMutex iAudioLossMutex;
-    uint32 iAudioLossDuration;
     PVRefBufferAlloc    mbufferAlloc;
 
     // data structures for tunneling buffers

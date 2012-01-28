@@ -19,7 +19,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "VideoMIO"
 #include <utils/Log.h>
-#include <surfaceflinger/ISurface.h>
+#include <ui/ISurface.h>
 
 #include "android_surface_output.h"
 #include <media/PVPlayer.h>
@@ -36,6 +36,12 @@ OSCL_DLL_ENTRY_POINT_DEFAULT()
 //The factory functions.
 #include "oscl_mem.h"
 
+#ifdef SLSI_S5P6442
+#include "gralloc_priv.h"
+#endif /* SLSI_S5P6442 */
+#ifdef ZERO_COPY
+#define ZERO_COPY_FLAG  0x12345678
+#endif
 using namespace android;
 
 OSCL_EXPORT_REF AndroidSurfaceOutput::AndroidSurfaceOutput() :
@@ -48,7 +54,6 @@ OSCL_EXPORT_REF AndroidSurfaceOutput::AndroidSurfaceOutput() :
     mPvPlayer = NULL;
     mEmulation = false;
     iEosReceived = false;
-    mNumberOfFramesToHold = 1;
 }
 
 status_t AndroidSurfaceOutput::set(PVPlayer* pvPlayer, const sp<ISurface>& surface, bool emulation)
@@ -91,6 +96,9 @@ void AndroidSurfaceOutput::initData()
     iPeer=NULL;
     iState=STATE_IDLE;
     iIsMIOConfigured = false;
+#ifdef SLSI_S5P6442
+    mUseHardware = false;
+#endif /* SLSI_S5P6442 */
 }
 
 void AndroidSurfaceOutput::ResetData()
@@ -127,7 +135,12 @@ void AndroidSurfaceOutput::processWriteResponseQueue(int numFramesToHold)
 {
     LOGV("processWriteResponseQueue: queued = %d, numFramesToHold = %d",
             iWriteResponseQueue.size(), numFramesToHold);
+#ifdef SLSI_S5P6442
+    // If decoder's output buffer is one, this code doesn't work.
+    while (!iWriteResponseQueue.empty()) {
+#else /* SLSI_S5P6442 */
     while (iWriteResponseQueue.size() > numFramesToHold) {
+#endif /* SLSI_S5P6442 */
         if (iPeer) {
             iPeer->writeComplete(iWriteResponseQueue[0].iStatus,
                     iWriteResponseQueue[0].iCmdId,
@@ -851,8 +864,71 @@ void AndroidSurfaceOutput::setParametersSync(PvmiMIOSession aSession, PvmiKvp* a
             iVideoParameterFlags |= VIDEO_SUBFORMAT_VALID;
             PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
                     (0,"AndroidSurfaceOutput::setParametersSync() Video SubFormat Key, Value %s",iVideoSubFormat.getMIMEStrPtr()));
+#ifdef SLSI_S5P6442
+#ifdef ZERO_COPY
+            if (pv_mime_strcmp(iVideoSubFormat.getMIMEStrPtr(), PVMF_MIME_YUV420_PLANAR) == 0)
+                mUseHardware = true;
+        }  
+        //All FSI for video will be set here in one go
+        else if (pv_mime_strcmp(aParameters[i].key, PVMF_FORMAT_SPECIFIC_INFO_KEY_YUV) == 0)
+        {
+            PVMFYuvFormatSpecificInfo0* yuvInfo = (PVMFYuvFormatSpecificInfo0*)aParameters->value.key_specific_value;
+
+            iVideoWidth = (int32)yuvInfo->width;
+            iVideoParameterFlags |= VIDEO_WIDTH_VALID;
+
+            LOGV("iVideoWidth=%d", iVideoWidth);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Video Width, Value %d", iVideoWidth));
+
+            iVideoHeight = (int32)yuvInfo->height;
+            iVideoParameterFlags |= VIDEO_HEIGHT_VALID;
+
+            LOGV("iVideoHeight=%d", iVideoHeight);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Video Height, Value %d", iVideoHeight));
+
+            iVideoDisplayHeight = (int32)yuvInfo->display_height;
+            iVideoParameterFlags |= DISPLAY_HEIGHT_VALID;
+
+            LOGV("iVideoDisplayHeight=%d", iVideoDisplayHeight);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Video Display Height, Value %d", iVideoDisplayHeight));
+
+            iVideoDisplayWidth = (int32)yuvInfo->display_width;
+            iVideoParameterFlags |= DISPLAY_WIDTH_VALID;
+
+            LOGV("iVideoDisplayWidth=%d", iVideoDisplayWidth);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Video Display Width, Value %d", iVideoDisplayWidth));
+
+            iVideoSubFormat = (PVMFFormatType)yuvInfo->video_format;
+            iVideoParameterFlags |= VIDEO_SUBFORMAT_VALID;
 
 LOGV("VIDEO SUBFORMAT SET TO %s\n",iVideoSubFormat.getMIMEStrPtr());
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() Video SubFormat Key, Value %s", iVideoSubFormat.getMIMEStrPtr()));
+
+            if (pv_mime_strcmp(iVideoSubFormat.getMIMEStrPtr(), PVMF_MIME_YUV420_PLANAR) == 0)
+                mUseHardware = true;
+
+            iNumberOfBuffers = (int32)yuvInfo->num_buffers;
+            iNumberOfBuffersValid = true;
+
+            LOGV("iNumberOfBuffers=%d", iNumberOfBuffers);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Number of Buffer, Value %d", iNumberOfBuffers));
+
+            iBufferSize = (int32)yuvInfo->buffer_size;
+            iBufferSizeValid = true;
+
+            LOGV("iBufferSize=%d", iBufferSize);
+            PVLOGGER_LOGMSG(PVLOGMSG_INST_LLDBG, iLogger, PVLOGMSG_STACK_TRACE,
+                            (0, "AndroidSurfaceOutput::setParametersSync() FSI_YUV Key, Buffer Size, Value %d", iBufferSize));
+#else
+	   LOGV("VIDEO SUBFORMAT SET TO %s\n",iVideoSubFormat.getMIMEStrPtr());
+#endif
+#endif /* SLSI_S5P6442 */
         }
         else
         {
@@ -936,7 +1012,7 @@ void AndroidSurfaceOutput::Run()
         LOGV("Flushing buffers after EOS");
         processWriteResponseQueue(0);
     } else {
-        processWriteResponseQueue(mNumberOfFramesToHold);
+        processWriteResponseQueue(2);
     }
 }
 
@@ -966,29 +1042,74 @@ OSCL_EXPORT_REF bool AndroidSurfaceOutput::initCheck()
     displayHeight = (displayHeight + 1) & -2;
     frameWidth = (frameWidth + 1) & -2;
     frameHeight = (frameHeight + 1) & -2;
+#ifdef SLSI_S5P6442
+    frameSize = (frameWidth * frameHeight * 3) >> 1;
+#else /* SLSI_S5P6442 */
     frameSize = frameWidth * frameHeight * 2;
+#endif /* SLSI_S5P6442 */
 
     // create frame buffer heap and register with surfaceflinger
+#ifdef PMEM_STREAM
+    sp<MemoryHeapBase> heap = new MemoryHeapBase("/dev/pmem_stream", frameSize * kBufferCount, 0);
+    if (heap->heapID() < 0) {
+        LOGE("Error creating frame buffer heap");
+        return false;
+    }
+
+    mPmemHeap = new MemoryHeapPmem(heap, 0);
+    if (mPmemHeap->heapID() < 0) {
+        LOGE("Error creating frame buffer heap");
+        heap.clear();
+        mPmemHeap.clear();
+        return false;
+    }
+#else
     sp<MemoryHeapBase> heap = new MemoryHeapBase(frameSize * kBufferCount);
     if (heap->heapID() < 0) {
         LOGE("Error creating frame buffer heap");
         return false;
     }
-    
+#endif
+
+#ifdef SLSI_S5P6442
+#ifndef FIMC_RENDERING
+   // LOGD("############displayWidth %d  displayHeight %d frameWidth %d frameHeight %d \n", displayWidth, displayHeight, frameWidth, frameHeight);
+#ifdef PMEM_STREAM
+    mBufferHeap = ISurface::BufferHeap(displayWidth, displayHeight,
+            frameWidth, frameHeight, PIXEL_FORMAT_YCbCr_420_P, 0,  private_handle_t::PRIV_FLAGS_VIDEO_PLAY, mPmemHeap);
+#else
+    mBufferHeap = ISurface::BufferHeap(displayWidth, displayHeight,
+            frameWidth, frameHeight, PIXEL_FORMAT_YCbCr_420_P, heap);
+#endif
+#else /* FIMC_RENDERING */
+#ifdef ZERO_COPY
+    mBufferHeap = ISurface::BufferHeap(displayWidth, displayHeight,
+            frameWidth, frameHeight, mUseHardware ? PIXEL_FORMAT_CUSTOM_YCbCr_420_SP : PIXEL_FORMAT_YCbCr_420_P, heap);
+#else /* ZERO_COPY */
+    mBufferHeap = ISurface::BufferHeap(displayWidth, displayHeight,
+           frameWidth, frameHeight, mUseHardware ? PIXEL_FORMAT_YCbCr_420_SP : PIXEL_FORMAT_YCbCr_420_P, heap);
+#endif /* ZERO_COPY */
+#endif /* FIMC_RENDERING */
+    mSurface->registerBuffers(mBufferHeap);
+#else /* SLSI_S5P6442 */
     mBufferHeap = ISurface::BufferHeap(displayWidth, displayHeight,
             frameWidth, frameHeight, PIXEL_FORMAT_RGB_565, heap);
     mSurface->registerBuffers(mBufferHeap);
+#endif /* SLSI_S5P6442 */
 
     // create frame buffers
     for (int i = 0; i < kBufferCount; i++) {
         mFrameBuffers[i] = i * frameSize;
     }
 
+#ifdef SLSI_S5P6442
+#else /* SLSI_S5P6442 */
     // initialize software color converter
     iColorConverter = ColorConvert16::NewL();
     iColorConverter->Init(displayWidth, displayHeight, frameWidth, displayWidth, displayHeight, displayWidth, CCROTATE_NONE);
     iColorConverter->SetMemHeight(frameHeight);
     iColorConverter->SetMode(1);
+#endif /* SLSI_S5P6442 */
 
     LOGV("video = %d x %d", displayWidth, displayHeight);
     LOGV("frame = %d x %d", frameWidth, frameHeight);
@@ -1004,10 +1125,41 @@ OSCL_EXPORT_REF bool AndroidSurfaceOutput::initCheck()
 
 OSCL_EXPORT_REF PVMFStatus AndroidSurfaceOutput::writeFrameBuf(uint8* aData, uint32 aDataLen, const PvmiMediaXferHeader& data_header_info)
 {
+#ifdef SLSI_S5P6442
+    int FrameSize;
+    uint8* pPhyYAddr;
+    uint32 zeroCopyFlag;
+    uint8* pVirYAddr;
+    uint8* pVirCAddr;
+    int AddrSize;
+#endif /* SLSI_S5P6442 */
     // post to SurfaceFlinger
     if ((mSurface != NULL) && (mBufferHeap.heap != NULL)) {
         if (++mFrameBufferIndex == kBufferCount) mFrameBufferIndex = 0;
+#ifdef SLSI_S5P6442
+#ifndef ZERO_COPY
+        memcpy(static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex], aData, aDataLen);
+#else /* ZERO_COPY*/ 
+   
+        AddrSize = sizeof(void *);
+
+	memcpy(&zeroCopyFlag, (aData + aDataLen) , 4);
+    memcpy(&pPhyYAddr, (aData + aDataLen + 4) , sizeof(pPhyYAddr));
+	memcpy(&pVirYAddr, (aData + aDataLen + 8) , sizeof(pVirYAddr));   
+	
+	
+	if(zeroCopyFlag == ZERO_COPY_FLAG){	
+		memcpy(static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex], &zeroCopyFlag, 4);
+        memcpy(static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex]+ 4, &pPhyYAddr, 4);
+        memcpy(static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex] + 8, &pVirYAddr, 4);
+   	 }
+    else{
+        memcpy(static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex], aData, aDataLen);
+    }
+#endif /* ZERO_COPY*/ 
+#else /* SLSI_S5P6442 */
         iColorConverter->Convert(aData, static_cast<uint8*>(mBufferHeap.heap->base()) + mFrameBuffers[mFrameBufferIndex]);
+#endif /* SLSI_S5P6442 */
         mSurface->postBuffer(mFrameBuffers[mFrameBufferIndex]);
     }
     return PVMFSuccess;
@@ -1032,6 +1184,9 @@ OSCL_EXPORT_REF void AndroidSurfaceOutput::closeFrameBuf()
 
     // free heaps
     LOGV("free frame heap");
+#ifdef PMEM_STREAM
+    mPmemHeap.clear();
+#endif
     mBufferHeap.heap.clear();
 
     // free color converter

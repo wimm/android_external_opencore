@@ -32,6 +32,16 @@
 #include "avc_dec.h"
 #endif
 
+#ifdef SLSI_S5P6442
+#define NAL_START_CODE_SIZE      4
+
+#define INPUT_BUFFER_SIZE_AVC    64000
+#define OUTPUT_BUFFER_SIZE_AVC   152064
+
+#define NUMBER_INPUT_BUFFER_AVC  10
+#define NUMBER_OUTPUT_BUFFER_AVC 1
+
+#else /* SLSI_S5P6442 */
 #if (defined(TEST_FULL_AVC_FRAME_MODE) || defined(TEST_FULL_AVC_FRAME_MODE_SC))
 #define INPUT_BUFFER_SIZE_AVC (2000 * MAX_NAL_PER_FRAME)
 #else
@@ -47,6 +57,8 @@
 
 #define NUMBER_INPUT_BUFFER_AVC  10
 #define NUMBER_OUTPUT_BUFFER_AVC  2
+#endif /* SLSI_S5P6442 */
+
 
 
 class OpenmaxAvcAO : public OmxComponentVideo
@@ -69,7 +81,32 @@ class OpenmaxAvcAO : public OmxComponentVideo
         void ProcessData();
         void DecodeWithoutMarker();
         void DecodeWithMarker();
+#ifdef SLSI_S5P6442
+        /* To remove output buffer memcpy ~ */
+        static OSCL_IMPORT_REF OMX_ERRORTYPE BaseComponentAllocateBuffer(
+            OMX_IN OMX_HANDLETYPE hComponent,
+            OMX_INOUT OMX_BUFFERHEADERTYPE** pBuffer,
+            OMX_IN OMX_U32 nPortIndex,
+            OMX_IN OMX_PTR pAppPrivate,
+            OMX_IN OMX_U32 nSizeBytes);
+        static OSCL_IMPORT_REF OMX_ERRORTYPE BaseComponentFreeBuffer(
+            OMX_IN  OMX_HANDLETYPE hComponent,
+            OMX_IN  OMX_U32 nPortIndex,
+            OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
+        OMX_ERRORTYPE AllocateBuffer(
+            OMX_IN OMX_HANDLETYPE hComponent,
+            OMX_INOUT OMX_BUFFERHEADERTYPE** pBuffer,
+            OMX_IN OMX_U32 nPortIndex,
+            OMX_IN OMX_PTR pAppPrivate,
+            OMX_IN OMX_U32 nSizeBytes);
+        OMX_ERRORTYPE FreeBuffer(
+            OMX_IN  OMX_HANDLETYPE hComponent,
+            OMX_IN  OMX_U32 nPortIndex,
+            OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
+        /* ~ To remove output buffer memcpy */
+#else /* SLSI_S5P6442 */
         void ResetComponent();
+#endif /* SLSI_S5P6442 */
         OMX_ERRORTYPE GetConfig(
             OMX_IN  OMX_HANDLETYPE hComponent,
             OMX_IN  OMX_INDEXTYPE nIndex,

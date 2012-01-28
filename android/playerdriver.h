@@ -19,7 +19,7 @@
 #define _PLAYERDRIVER_H
 
 #include <cstring>
-#include <surfaceflinger/ISurface.h>
+#include <ui/ISurface.h>
 #include <utils/Errors.h>  // for android::status_t
 #include <utils/RefBase.h>  // for android::sp
 #include <media/MediaPlayerInterface.h>

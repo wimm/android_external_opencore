@@ -33,8 +33,11 @@
 #endif
 
 
+#ifdef SLSI_S5P6442
+#define INPUT_BUFFER_SIZE_AVCENC 202752			//(176 * 144 * 1.5) for YUV 420 format.
+#else /* SLSI_S5P6442 */
 #define INPUT_BUFFER_SIZE_AVCENC 38016          //(176 * 144 * 1.5) for YUV 420 format.
-
+#endif /* SLSI_S5P6442 */
 #if (defined(TEST_FULL_AVC_FRAME_MODE) || defined(TEST_FULL_AVC_FRAME_MODE_SC))
 #define OUTPUT_BUFFER_SIZE_AVCENC 38581 // (20 + 4 * MAX_NAL_PER_FRAME + 20 + 6) is size of extra data
 #else

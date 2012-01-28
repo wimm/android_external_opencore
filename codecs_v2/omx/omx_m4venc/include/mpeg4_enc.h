@@ -27,6 +27,11 @@
 #include "OMX_Component.h"
 #endif
 
+#ifdef SLSI_S5P6442
+#ifndef __SAMSUNG_SYSLSI_APDEV_MFCLIB_SSBSIPMPEG4ENCODE_H__
+#include "SsbSipMpeg4Encode.h"
+#endif
+#else /* SLSI_S5P6442 */
 #ifndef _MP4ENC_API_H_
 #include "mp4enc_api.h"
 #endif
@@ -49,6 +54,7 @@
 
 
 const uint32 DEFAULT_VOL_HEADER_LENGTH = 28;
+#endif /* SLSI_S5P6442 */
 
 enum
 {
@@ -56,12 +62,23 @@ enum
     MODE_MPEG4
 };
 
+#ifdef SLSI_S5P6442
+// RainAde for Encoding pic type
+enum
+{
+    PIC_TYPE_INTRA = 0,
+    PIC_TYPE_INTER
+};
+#endif /* SLSI_S5P6442 */
 
 class Mpeg4Encoder_OMX
 {
     public:
 
         Mpeg4Encoder_OMX();
+#ifdef SLSI_S5P6442
+        ~Mpeg4Encoder_OMX();
+#endif /* SLSI_S5P6442 */
 
         OMX_ERRORTYPE Mp4EncInit(OMX_S32 iEncMode,
                                  OMX_VIDEO_PORTDEFINITIONTYPE aInputParam,
@@ -76,6 +93,9 @@ class Mpeg4Encoder_OMX
                                  OMX_VIDEO_PARAM_H263TYPE aH263Type,
                                  OMX_VIDEO_PARAM_PROFILELEVELTYPE* aProfileLevel);
 
+#ifdef SLSI_S5P6442
+        OMX_ERRORTYPE Mp4EncDeinit();
+#endif /* SLSI_S5P6442 */
 
         OMX_BOOL Mp4EncodeVideo(OMX_U8*    aOutBuffer,
                                 OMX_U32*   aOutputLength,
@@ -91,12 +111,25 @@ class Mpeg4Encoder_OMX
         OMX_BOOL Mp4UpdateBitRate(OMX_U32 aEncodedBitRate);
         OMX_BOOL Mp4UpdateFrameRate(OMX_U32 aEncodeFramerate);
 
+#ifdef SLSI_S5P6442
+#else /* SLSI_S5P6442 */
         OMX_ERRORTYPE Mp4EncDeinit();
 
 
 
+#endif /* SLSI_S5P6442 */
     private:
 
+#ifdef SLSI_S5P6442
+	// RainAde : for MFC(mpeg4/h263) encoder
+        int m_mpeg4enc_create_flag;
+        void *m_mpeg4enc_handle;
+        unsigned char * m_mpeg4enc_buffer;
+
+	// RainAde : for composer interface
+	int frame_cnt;
+	int hdr_size;
+#else /* SLSI_S5P6442 */
         void CopyToYUVIn(uint8* YUV, int width, int height, int width_16, int height_16);
 
         /* RGB->YUV conversion */
@@ -122,6 +155,7 @@ class Mpeg4Encoder_OMX
         OMX_BOOL iVolHeaderFlag;
 
 
+#endif /* SLSI_S5P6442 */
 
 };
 

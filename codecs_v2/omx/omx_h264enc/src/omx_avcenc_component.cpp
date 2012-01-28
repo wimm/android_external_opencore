@@ -456,6 +456,13 @@ OMX_ERRORTYPE OmxComponentAvcEncAO::ConstructComponent(OMX_PTR pAppData, OMX_PTR
     }
 
     ipAvcEncoderObject = OSCL_NEW(AvcEncoder_OMX, ());
+#ifdef SLSI_S5P6442
+    // added by RainAde : for error check
+    if (NULL == ipAvcEncoderObject)
+    {
+        return OMX_ErrorInsufficientResources;
+    }
+#endif /* SLSI_S5P6442 */
 
 #if PROXY_INTERFACE
 
@@ -521,7 +528,12 @@ void OmxComponentAvcEncAO::ProcessData()
 
     OMX_U8*                 pOutBuffer;
     OMX_U32                 OutputLength;
+#ifdef SLSI_S5P6442
+    // RainAde changed 1 line : opencore 2.03 but not follow
+    OMX_BOOL                EncodeReturn = OMX_TRUE;
+#else /* SLSI_S5P6442 */
     AVCEnc_Status           EncodeReturn = AVCENC_SUCCESS;
+#endif /* SLSI_S5P6442 */
     OMX_COMPONENTTYPE*      pHandle = &iOmxComponent;
 
     if ((!iIsInputBufferEnded) || (iEndofStream))
@@ -665,8 +677,13 @@ void OmxComponentAvcEncAO::ProcessData()
             }   //if (OutputLength > 0)  loop
 
             //If encoder returned error in case of frame skip/corrupt frame, report it to the client via a callback
+#ifdef SLSI_S5P6442
+            // RainAde : changed 1 line : opencore ver. 2.03 but not follow
+            if ((OMX_FALSE == EncodeReturn) && (OMX_FALSE == iEndofStream))
+#else /* SLSI_S5P6442 */
             if (((AVCENC_SKIPPED_PICTURE == EncodeReturn) || (AVCENC_FAIL == EncodeReturn))
                     && (OMX_FALSE == iEndofStream))
+#endif /* SLSI_S5P6442 */
             {
                 PVLOGGER_LOGMSG(PVLOGMSG_INST_HLDBG, iLogger, PVLOGMSG_NOTICE, (0, "OmxComponentAvcEncAO : Frame skipped, ProcessData ErrorStreamCorrupt callback send"));
 
@@ -680,6 +697,19 @@ void OmxComponentAvcEncAO::ProcessData()
             }
 
             //Return the input buffer that has been consumed fully
+#ifdef SLSI_S5P6442
+            if (0 == iInputCurrLength)
+            {
+                ipInputBuffer->nFilledLen = 0;
+                ReturnInputBuffer(ipInputBuffer, pInPort);
+                ipInputBuffer = NULL;
+
+                iIsInputBufferEnded = OMX_TRUE;
+                iInputCurrLength = 0;
+            }
+
+            iFrameCount++;
+#else /* SLSI_S5P6442 */
             if ((AVCENC_PICTURE_READY == EncodeReturn) ||
                     (AVCENC_SKIPPED_PICTURE == EncodeReturn) ||
                     (AVCENC_FAIL == EncodeReturn))
@@ -698,6 +728,7 @@ void OmxComponentAvcEncAO::ProcessData()
             {
                 iEndOfOutputFrame = OMX_TRUE;
             }
+#endif /* SLSI_S5P6442 */
         }
 
 
@@ -706,8 +737,14 @@ void OmxComponentAvcEncAO::ProcessData()
          */
         if (OMX_TRUE == iEndofStream)
         {
+#ifdef SLSI_S5P6442
+            // RainAde : changed l line : opencore ver. 2.03 but not follow
+            if (((0 == iInputCurrLength) || (OMX_FALSE == EncodeReturn)) &&
+                    (0 == iInternalOutBufFilledLen))
+#else /* SLSI_S5P6442 */
             if (((0 == iInputCurrLength) || (AVCENC_FAIL == EncodeReturn)) &&
                     (0 == iInternalOutBufFilledLen))
+#endif /* SLSI_S5P6442 */
             {
 
                 (*(ipCallbacks->EventHandler))
@@ -1164,7 +1201,12 @@ void OmxComponentAvcEncAO::ManageFrameBoundaries()
 
     ComponentPortType*  pOutPort = ipPorts[OMX_PORT_OUTPUTPORT_INDEX];
 
+#ifdef SLSI_S5P6442
+    // removed by RainAde : MFC encoder doesn't retrun header flag. if it is needed, we should make that api.
+    if (!iPVCapabilityFlags.iOMXComponentUsesFullAVCFrames)
+#else /* SLSI_S5P6442 */
     if (!iPVCapabilityFlags.iOMXComponentUsesFullAVCFrames || !ipAvcEncoderObject->GetSpsPpsHeaderFlag())
+#endif /* SLSI_S5P6442 */
     {
         if (iPVCapabilityFlags.iOMXComponentUsesNALStartCodes && ipOutputBuffer->nFilledLen == 4)
         {

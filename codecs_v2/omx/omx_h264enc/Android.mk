@@ -33,4 +33,8 @@ LOCAL_COPY_HEADERS := \
 	include/avc_enc.h \
  	include/omx_avcenc_component.h
 
+ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
+LOCAL_CFLAGS  += -DSLSI_S5P6442
+endif
+
 include $(BUILD_STATIC_LIBRARY)
