@@ -40,7 +40,7 @@ LOCAL_LDLIBS +=
 
 ifeq ($(TARGET_BOARD_PLATFORM),s5p6442)
 LOCAL_CFLAGS  += -DSLSI_S5P6442
-LOCAL_C_INCLUDES += vendor/sec_proprietary/libgralloc
+LOCAL_C_INCLUDES += device/sec_proprietary/libgralloc
 endif
 ifeq ($(MFC_ZERO_COPY),true)
 LOCAL_CFLAGS  += -DZERO_COPY
